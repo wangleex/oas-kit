@@ -8,7 +8,13 @@ const yaml = require('js-yaml');
 const recurse = require('reftools/lib/recurse.js').recurse;
 const jptr = require('reftools/lib/jptr.js').jptr;
 const resolveInternal = jptr;
+//const clone = require('reftools/lib/clone.js').circularClone;
 const clone = require('reftools/lib/clone.js').clone;
+
+const red = process.env.NODE_DISABLE_COLORS ? '' : '\x1b[31m';
+const green = process.env.NODE_DISABLE_COLORS ? '' : '\x1b[32m';
+const yellow = process.env.NODE_DISABLE_COLORS ? '' : '\x1b[33;1m';
+const normal = process.env.NODE_DISABLE_COLORS ? '' : '\x1b[0m';
 
 function uniqueOnly(value, index, self) {
     return self.indexOf(value) === index;
@@ -28,9 +34,9 @@ function hash(s) {
     let chr;
     if (s.length === 0) return hash;
     for (let i = 0; i < s.length; i++) {
-      chr   = s.charCodeAt(i);
-      hash  = ((hash << 5) - hash) + chr;
-      hash |= 0; // Convert to 32bit integer
+        chr = s.charCodeAt(i);
+        hash = ((hash << 5) - hash) + chr;
+        hash |= 0; // Convert to 32bit integer
     }
     return hash;
 }
@@ -56,15 +62,23 @@ function readFileAsync(filename, encoding) {
     });
 }
 
-function resolveAllInternal(obj,context,options) {
-    recurse(obj,{},function(obj,key,state){
-        if (isRef(obj,key)) {
-            if (obj[key].startsWith('#')) {
-                if (options.verbose) console.warn('Internal resolution',obj[key]);
-                state.parent[state.pkey] = resolveInternal(context,obj[key]);
+function resolveAllInternal(obj, context, options) {
+    let changes = 1;
+    while (changes) {
+        changes = 0;
+        recurse(obj, {}, function (obj, key, state) {
+            if (isRef(obj, key)) {
+                if (obj[key].startsWith('#')) {
+                    let target = clone(resolveInternal(context, obj[key]));
+                    if (options.verbose) console.log((target === false ? red : green)+'Internal resolution', obj[key],normal);
+                    if (target !== false) {
+                        changes++;
+                        state.parent[state.pkey] = target;
+                    }
+                }
             }
-        }
-    });
+        });
+    }
     return obj;
 }
 
@@ -87,29 +101,30 @@ function resolveExternal(root, pointer, options, callback) {
     let target = url.resolve(base ? base + '/' : '', pointer)
 
     if (options.cache[target]) {
-        if (options.verbose) console.log('CACHED',target);
+        if (options.verbose) console.log('CACHED', target, fragment);
         let context = clone(options.cache[target]);
         let data = context;
         if (fragment) {
             data = resolveInternal(data, fragment);
         }
-        data = resolveAllInternal(data,context,options);
-        callback(data,target);
+        data = resolveAllInternal(data, context, options);
+        callback(data, target);
         return Promise.resolve(data);
     }
 
-    if (options.verbose) console.log('GET',target);
+    if (options.verbose) console.log('GET', target);
 
     if (options.handlers && options.handlers[effectiveProtocol]) {
-        return options.handlers[effectiveProtocol](base,pointer,fragment,options)
-            .then(function(data){
-                callback(data,target);
+        return options.handlers[effectiveProtocol](base, pointer, fragment, options)
+            .then(function (data) {
+                callback(data, target);
                 return data;
             });
     }
     else if (u.protocol && u.protocol.startsWith('http')) {
-        return fetch(target, {agent:options.agent})
+        return fetch(target, { agent: options.agent })
             .then(function (res) {
+                if (res.status !== 200) throw new Error(`Received status code ${res.status}`);
                 return res.text();
             })
             .then(function (data) {
@@ -119,32 +134,39 @@ function resolveExternal(root, pointer, options, callback) {
                     if (fragment) {
                         data = resolveInternal(data, fragment);
                     }
-                    data = resolveAllInternal(data,context,options);
+                    data = resolveAllInternal(data, context, options);
                 }
                 catch (ex) {
                     if (options.verbose) console.warn(ex);
                 }
-                callback(data,target);
+                callback(data, target);
                 return data;
+            })
+            .catch(function (err) {
+                if (options.verbose) console.warn(err);
             });
     }
     else {
         return readFileAsync(target, options.encoding || 'utf8')
-        .then(function(data){
-            try {
-                let context = data = yaml.safeLoad(data, { json: true });
-                options.cache[target] = data;
-                if (fragment) {
-                    data = resolveInternal(data, fragment);
+            .then(function (data) {
+                try {
+                    let context = data = yaml.safeLoad(data, { json: true });
+                    options.cache[target] = data;
+                    if (fragment) {
+                        data = resolveInternal(data, fragment);
+                    }
+                    data = resolveAllInternal(data, context, options);
                 }
-                data = resolveAllInternal(data,context,options);
-            }
-            catch (ex) {
-                if (options.verbose) console.warn(ex);
-            }
-            callback(data,target);
-            return data;
-        });
+                catch (ex) {
+                    if (options.verbose) console.warn(ex);
+                }
+                callback(data, target);
+                return data;
+            })
+            .catch(function(err){
+                console.warn(red+err.message+normal);
+                if (options.promise) options.promise.reject(err);
+            });
     }
 
 }
@@ -188,7 +210,7 @@ const httpVerbs = [
 ];
 
 function sanitise(s) {
-    s = s.replace('[]','Array');
+    s = s.replace('[]', 'Array');
     var components = s.split('/');
     components[0] = components[0].replace(/[^A-Za-z0-9_\-\.]+|\s+/gm, '_');
     return components.join('/');
@@ -198,7 +220,7 @@ function sanitiseAll(s) {
     return sanitise(s.split('/').join('_'));
 }
 
-function isRef(obj,key) {
+function isRef(obj, key) {
     return ((key === '$ref') && (typeof obj[key] === 'string'));
 }
 

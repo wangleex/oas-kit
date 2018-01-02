@@ -4,8 +4,8 @@
 const fs = require('fs');
 const url = require('url');
 const pathlib = require('path');
+const util = require('util');
 
-const co = require('co');
 const maybe = require('call-me-maybe');
 const fetch = require('node-fetch');
 const yaml = require('js-yaml');
@@ -14,6 +14,7 @@ const jptr = require('reftools/lib/jptr.js');
 const common = require('./common.js');
 const walkSchema = require('./walkSchema.js').walkSchema;
 const statusCodes = require('./statusCodes.js').statusCodes;
+const resolver = require('./resolver.js');
 
 // TODO split out into params, security etc
 // TODO handle specification-extensions with plugins?
@@ -24,7 +25,12 @@ var componentNames; // initialised in main
 function throwError(message, options) {
     let err = new Error(message);
     err.options = options;
-    throw err;
+    if (options.promise.reject) {
+        options.promise.reject(err);
+    }
+    else {
+        throw err;
+    }
 }
 
 function throwOrWarn(message, container, options) {
@@ -1026,30 +1032,6 @@ function extractServerParameters(server) {
     });
 }
 
-function findExternalRefs(master,options,actions) {
-    common.recurse(master, null, function (obj, key, state) {
-        if (common.isRef(obj,key)) {
-            if (!obj[key].startsWith('#')) {
-                actions.push(common.resolveExternal(master, obj[key], options, function (data, source) {
-                    let external = {};
-                    external.context = state.path;
-                    external.$ref = obj[key];
-                    external.original = common.clone(data);
-                    external.updated = data;
-                    external.source = source;
-                    options.externals.push(external);
-                    let localOptions = Object.assign({},options,{source:source});
-                    findExternalRefs(data,localOptions,actions);
-                    if (options.patch && obj.description && !data.description) {
-                        data.description = obj.description;
-                    }
-                    state.parent[state.pkey] = data;
-                }));
-            }
-        }
-    });
-}
-
 function fixInfo(openapi, options, reject) {
     if (!openapi.info) {
         if (options.patch) {
@@ -1127,30 +1109,24 @@ function fixPaths(openapi, options, reject) {
 function convertObj(swagger, options, callback) {
     return maybe(callback, new Promise(function (resolve, reject) {
         options.externals = [];
+        options.externalRefs = {};
+        options.promise = {};
+        options.promise.resolve = resolve;
+        options.promise.reject = reject;
         if (!options.cache) options.cache = {};
         if (swagger.openapi && (typeof swagger.openapi === 'string') && swagger.openapi.startsWith('3.')) {
             options.openapi = common.clone(swagger);
             fixInfo(options.openapi, options, reject);
             fixPaths(options.openapi, options, reject);
-            let actions = [];
-            if (options.resolve) {
-                findExternalRefs(options.openapi, options, actions);
-            }
 
-            co(function* () {
-                // resolve multiple promises in parallel
-                for (let action of actions) {
-                    yield action; // because we can mutate the array
-                }
+            resolver.resolve(options)
+            .then(function(){
                 if (options.direct) {
                     return resolve(options.openapi);
                 }
                 else {
                     return resolve(options);
                 }
-            })
-            .catch(function (err) {
-                reject(err);
             });
             return;
         }
@@ -1259,16 +1235,8 @@ function convertObj(swagger, options, callback) {
         delete openapi.parameters;
         delete openapi.securityDefinitions;
 
-        let actions = [];
-        if (options.resolve) {
-            findExternalRefs(openapi, options, actions);
-        }
-
-        co(function* () {
-            // resolve multiple promises in parallel
-            for (let action of actions) {
-                yield action; // because we can mutate the array
-            }
+        resolver.resolve(options)
+        .then(function(){
             main(openapi, options);
             if (options.direct) {
                 resolve(options.openapi);
@@ -1277,9 +1245,11 @@ function convertObj(swagger, options, callback) {
                 resolve(options);
             }
         })
-        .catch(function (err) {
-            reject(err);
+        .catch(function(ex){
+            console.warn(ex);
+            reject(ex);
         });
+
     }));
 }
 
@@ -1298,7 +1268,7 @@ function convertStr(str, options, callback) {
         }
         if (obj) {
             options.original = obj;
-            return convertObj(obj, options, callback)
+            resolve(convertObj(obj, options, callback));
         }
         else {
             reject(new Error('Could not resolve url'));
@@ -1315,9 +1285,10 @@ function convertUrl(url, options, callback) {
             console.log('GET ' + url);
         }
         fetch(url, {agent:options.agent}).then(function (res) {
+        if (res.status !== 200) throw new Error(`Received status code ${res.status}`);
             return res.text();
         }).then(function (body) {
-            return convertStr(body, options, callback);
+            resolve(convertStr(body, options, callback));
         }).catch(function (err) {
             reject(err);
         });
@@ -1332,7 +1303,7 @@ function convertFile(filename, options, callback) {
             }
             else {
                 options.sourceFile = filename;
-                return convertStr(s, options, callback)
+                resolve(convertStr(s, options, callback));
             }
         });
     }));
@@ -1345,7 +1316,7 @@ function convertStream(readable, options, callback) {
             data += chunk;
         })
         .on('end', function () {
-            return convertStr(data, options, callback);
+            resolve(convertStr(data, options, callback));
         });
     }));
 }

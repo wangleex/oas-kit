@@ -8,7 +8,6 @@ const util = require('util');
 
 const yaml = require('js-yaml');
 const should = require('should');
-const co = require('co');
 var ajv = require('ajv')({
     allErrors: true,
     verbose: true,
@@ -26,8 +25,9 @@ var metaSchema = require('ajv/lib/refs/json-schema-v5.json');
 ajv.addMetaSchema(metaSchema);
 ajv._opts.defaultMeta = metaSchema.id;
 
-const common = require('./common.js');
 const jptr = require('reftools/lib/jptr.js');
+const common = require('./common.js');
+const resolver = require('./resolver.js');
 const walkSchema = require('./walkSchema.js').walkSchema;
 const wsGetDefaultState = require('./walkSchema.js').getDefaultState;
 const linter = require('./linter/linter.js');
@@ -281,7 +281,7 @@ function checkSubSchema(schema, parent, state) {
     if (schema.externalDocs) {
         schema.externalDocs.should.have.key('url');
         schema.externalDocs.url.should.have.type('string');
-        validateUrl(schema.externalDocs.url, [state.openapi.servers], 'externalDocs', state.options).should.not.throw();
+        should.doesNotThrow(function() { validateUrl(schema.externalDocs.url, [state.openapi.servers], 'externalDocs', state.options)},'Invalid externalDocs.url');
     }
     if (prop) state.options.context.pop();
     if (!prop || prop === 'schema') validateSchema(schema, state.openapi, state.options); // top level only
@@ -313,7 +313,7 @@ function checkExample(ex, contextServers, openapi, options) {
     if (typeof ex.externalValue !== 'undefined') {
         ex.externalValue.should.have.type('string');
         ex.should.not.have.property('value');
-        (function () { validateUrl(ex.externalValue, contextServers, 'examples..externalValue', options) }).should.not.throw();
+        should.doesNotThrow(function () { validateUrl(ex.externalValue, contextServers, 'examples..externalValue', options) },'Invalid externalValue url');
     }
     //else { // not mandated by the spec. moved to linter rule
     //    ex.should.have.property('value');
@@ -367,7 +367,8 @@ function checkContent(content, contextServers, openapi, options) {
 
 function checkServer(server, options) {
     server.should.have.property('url');
-    (function () { validateUrl(server.url, [], 'server.url', options) }).should.not.throw();
+    server.url.should.have.type('string');
+    should.doesNotThrow(function () { validateUrl(server.url, [], 'server.url', options) },'Invalid server url');
     let srvVars = 0;
     server.url.replace(/\{(.+?)\}/g, function (match, group1) {
         srvVars++;
@@ -744,7 +745,8 @@ function checkPathItem(pathItem, path, openapi, options) {
                 contextAppend(options, 'externalDocs');
                 op.externalDocs.should.have.key('url');
                 op.externalDocs.url.should.have.type('string');
-                (function () { validateUrl(op.externalDocs.url, contextServers, 'externalDocs', options) }).should.not.throw();
+                should.doesNotThrow(function () { validateUrl(op.externalDocs.url, contextServers, 'externalDocs', options) },
+                'Invalid externalDocs.url');
                 options.context.pop();
             }
             if (op.callbacks) {
@@ -840,14 +842,16 @@ function validateSync(openapi, options, callback) {
         if (typeof openapi.info.license.url !== 'undefined') {
             openapi.info.license.url.should.be.a.String();
             openapi.info.license.url.should.not.be.empty();
-            (function () { validateUrl(openapi.info.license.url, contextServers, 'license.url', options) }).should.not.throw();
+            should.doesNotThrow(function () { validateUrl(openapi.info.license.url, contextServers, 'license.url', options) },
+            'Invalid license.url');
         }
         if (options.lint) options.linter('license',openapi.info.license,options);
         options.context.pop();
     }
     if (typeof openapi.info.termsOfService !== 'undefined') {
         should(openapi.info.termsOfService).not.be.Null();
-        (function () { validateUrl(openapi.info.termsOfService, contextServers, 'termsOfService', options) }).should.not.throw();
+        openapi.info.termsOfService.should.be.a.String();
+        should.doesNotThrow(function () { validateUrl(openapi.info.termsOfService, contextServers, 'termsOfService', options) },'Invalid termsOfService url');
     }
     if (typeof openapi.info.contact !== 'undefined') {
         contextAppend(options, 'contact');
@@ -855,7 +859,7 @@ function validateSync(openapi, options, callback) {
         openapi.info.contact.should.not.be.an.Array();
         if (typeof openapi.info.contact.url !== 'undefined') {
             openapi.info.contact.url.should.be.type('string');
-            (function () { validateUrl(openapi.info.contact.url, contextServers, 'url', options) }).should.not.throw();
+            should.doesNotThrow(function () { validateUrl(openapi.info.contact.url, contextServers, 'url', options) },'Invalid contact url');
         }
         if (typeof openapi.info.contact.email !== 'undefined') {
             openapi.info.contact.email.should.have.type('string');
@@ -883,7 +887,7 @@ function validateSync(openapi, options, callback) {
         contextAppend(options, 'externalDocs');
         openapi.externalDocs.should.have.key('url');
         openapi.externalDocs.url.should.have.type('string');
-        (function () { validateUrl(openapi.externalDocs.url, contextServers, 'externalDocs', options) }).should.not.throw();
+        should.doesNotThrow(function () { validateUrl(openapi.externalDocs.url, contextServers, 'externalDocs', options) },'Invalid externalDocs.url');
         options.context.pop();
     }
 
@@ -900,7 +904,7 @@ function validateSync(openapi, options, callback) {
                 contextAppend(options, 'externalDocs');
                 tag.externalDocs.should.have.key('url');
                 tag.externalDocs.url.should.have.type('string');
-                (function () { validateUrl(tag.externalDocs.url, contextServers, 'tag.externalDocs', options) }).should.not.throw();
+                should.doesNotThrow(function () { validateUrl(tag.externalDocs.url, contextServers, 'tag.externalDocs', options) },'Invalid externalDocs.url');
                 options.context.pop();
             }
             if (options.lint) options.linter('tag',tag,options);
@@ -952,7 +956,7 @@ function validateSync(openapi, options, callback) {
                     if ((f === 'implicit') || (f === 'authorizationCode')) {
                         flow.should.have.property('authorizationUrl');
                         flow.authorizationUrl.should.have.type('string');
-                        (function () { validateUrl(flow.authorizationUrl, contextServers, 'authorizationUrl', options) }).should.not.throw();
+                        should.doesNotThrow(function () { validateUrl(flow.authorizationUrl, contextServers, 'authorizationUrl', options) },'Invalid authorizationUrl');
                     }
                     else {
                         flow.should.not.have.property('authorizationUrl');
@@ -961,13 +965,15 @@ function validateSync(openapi, options, callback) {
                         (f === 'authorizationCode')) {
                         flow.should.have.property('tokenUrl');
                         flow.tokenUrl.should.have.type('string');
-                        (function () { validateUrl(flow.tokenUrl, contextServers, 'tokenUrl', options) }).should.not.throw();
+                        should.doesNotThrow(function () { validateUrl(flow.tokenUrl, contextServers, 'tokenUrl', options) },
+                        'Invalid tokenUrl');
                     }
                     else {
                         flow.should.not.have.property('tokenUrl');
                     }
                     if (typeof flow.refreshUrl !== 'undefined') {
-                        (function () { validateUrl(flow.refreshUrl, contextServers, 'refreshUrl', options) }).should.not.throw();
+                        flow.refreshUrl.should.be.a.String();
+                        should.doesNotThrow(function () { validateUrl(flow.refreshUrl, contextServers, 'refreshUrl', options) },'Invalid refreshUrl');
                     }
                     flow.should.have.property('scopes');
                 }
@@ -978,7 +984,7 @@ function validateSync(openapi, options, callback) {
             if (scheme.type === 'openIdConnect') {
                 scheme.should.have.property('openIdConnectUrl');
                 scheme.openIdConnectUrl.should.have.type('string');
-                (function () { validateUrl(scheme.openIdConnectUrl, contextServers, 'openIdConnectUrl', options) }).should.not.throw();
+                should.doesNotThrow(function () { validateUrl(scheme.openIdConnectUrl, contextServers, 'openIdConnectUrl', options) },'Invalid openIdConnectUrl');
             }
             else {
                 scheme.should.not.have.property('openIdConnectUrl');
@@ -1178,17 +1184,27 @@ function validateSync(openapi, options, callback) {
 }
 
 function findExternalRefs(master, options, actions) {
-    common.recurse(master, {}, function (obj, key, state) {
-        if (common.isRef(obj,key)) {
-            if (!obj[key].startsWith('#')) {
-                options.context.push(state.path);
-                actions.push(common.resolveExternal(master, obj[key], options, function (data, newSource) {
-                    state.parent[state.pkey] = findExternalRefs(data,options,actions);
-                }));
-                options.context.pop();
+    let changes = 1;
+    let iterations = 0;
+    let refs = 1;
+    while ((changes > 0) && (iterations<(refs*2))) {
+        changes = 0;
+        common.recurse(master, {}, function (obj, key, state) {
+            refs = 0;
+            if (common.isRef(obj,key)) {
+                if (!obj[key].startsWith('#')) {
+                    refs++;
+                    options.context.push(state.path);
+                    changes++;
+                    actions.push(common.resolveExternal(master, obj[key], options, function (data, newSource) {
+                        //let localOptions = Object.assign({},options,{source:newSource});
+                        //state.parent[state.pkey] = findExternalRefs(data,localOptions,actions);
+                    }));
+                    options.context.pop();
+                }
             }
-        }
-    });
+        });
+    }
     return master;
 }
 
@@ -1205,15 +1221,8 @@ function setupOptions(options,openapi) {
 function validate(openapi, options, callback) {
     setupOptions(options,openapi);
 
-    var actions = [];
-    if (options.resolve) {
-        findExternalRefs(openapi, options, actions);
-    }
-
-    co(function* () {
-        for (var promise of actions) {
-            yield promise; // because we mutate the array
-        }
+    resolver.resolve(options) // is a no-op if options.resolve is not set
+    .then(function(){
         options.context = [];
         validateSync(openapi, options, callback);
     })

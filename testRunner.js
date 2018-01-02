@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 // @ts-check
 'use strict';
 
@@ -62,10 +64,10 @@ var argv = require('yargs')
     .version()
     .argv;
 
-var red = process.env.NODE_DISABLE_COLORS ? '' : '\x1b[31m';
-var green = process.env.NODE_DISABLE_COLORS ? '' : '\x1b[32m';
-var yellow = process.env.NODE_DISABLE_COLORS ? '' : '\x1b[33;1m';
-var normal = process.env.NODE_DISABLE_COLORS ? '' : '\x1b[0m';
+const red = process.env.NODE_DISABLE_COLORS ? '' : '\x1b[31m';
+const green = process.env.NODE_DISABLE_COLORS ? '' : '\x1b[32m';
+const yellow = process.env.NODE_DISABLE_COLORS ? '' : '\x1b[33;1m';
+const normal = process.env.NODE_DISABLE_COLORS ? '' : '\x1b[0m';
 
 var pass = 0;
 var fail = 0;
@@ -76,6 +78,7 @@ var genStack = [];
 
 var options = argv;
 options.patch = !argv.nopatch;
+options.rewriteRefs = false;
 
 function finalise(err, options) {
     if (!argv.quiet || err) {
@@ -143,7 +146,6 @@ function handleResult(err, options) {
             let resultStr2 = yaml.safeDump(result, { lineWidth: -1, noRefs: true }); // have no identity ref_s
             resultStr.should.not.be.exactly('{}','Result should not be empty');
             resultStr.should.equal(resultStr2,'Result should have no object identity ref_s');
-            let lines = resultStr2.split('\n');
         }
 
         validator.validate(result, options, finalise);
@@ -202,21 +204,42 @@ function* check(file, force, expectFailure) {
         options.original = src;
         options.source = file;
 
-        try {
-            if (file.startsWith('http')) {
-                swagger2openapi.convertUrl(file, common.clone(options), handleResult);
-            }
-            else {
-                swagger2openapi.convertObj(src, common.clone(options), handleResult);
-            }
+        if (file.startsWith('http')) {
+            swagger2openapi.convertUrl(file, common.clone(options))
+            .then(function(options){
+                handleResult(null,options);
+            })
+            .catch(function(ex){
+                console.warn(red+ex);
+                if (expectFailure) {
+                    warnings.push('Converter failed ' + options.source);
+                }
+                else {
+                    failures.push('Converter failed ' + options.source);
+                    fail++;
+                }
+                genStackNext();
+                result = false;
+            });
         }
-        catch (ex) {
-            console.log(red + 'Converter threw an error: ' + ex.message);
-            warnings.push('Converter failed ' + options.source);
-            genStackNext();
-            result = false;
+        else {
+            swagger2openapi.convertObj(src, common.clone(options))
+            .then(function(options){
+                handleResult(null,options);
+            })
+            .catch(function(ex){
+                console.warn(red+ex);
+                if (expectFailure) {
+                    warnings.push('Converter failed ' + options.source);
+                }
+                else {
+                    failures.push('Converter failed ' + options.source);
+                    fail++;
+                }
+                genStackNext();
+                result = false;
+            });
         }
-
     }
     else {
         genStackNext();
@@ -247,16 +270,16 @@ function processPathSpec(pathspec, expectFailure) {
         readfiles(pathspec, { readContents: false, filenameFormat: readfiles.FULL_PATH }, function (err) {
             if (err) console.log(util.inspect(err));
         })
-            .then(files => {
-                files = files.sort();
-                for (var file of files) {
-                    genStack.push(check(file, false, expectFailure));
-                }
-                genStackNext();
-            })
-            .catch(err => {
-                console.log(util.inspect(err));
-            });
+        .then(files => {
+            files = files.sort();
+            for (var file of files) {
+                genStack.push(check(file, false, expectFailure));
+            }
+            genStackNext();
+        })
+        .catch(err => {
+            console.log(util.inspect(err));
+        });
     }
 }
 
@@ -274,6 +297,8 @@ if (argv.fail) {
         processPathSpec(pathspec, true);
     }
 }
+
+process.on('unhandledRejection', r => console.warn(r));
 
 process.on('exit', function () {
     if (warnings.length) {

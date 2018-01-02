@@ -27,6 +27,7 @@ original|Object|Bi-directional|Used by `testRunner` to round-trip the original d
 outfile|String|Input|The output file to write to
 output|Boolean|Input|Internal flag to testRunner to write output openapi.yaml files
 patch|Boolean|Input|Flag to fix-up minor errors in the source definition before conversion
+promise|Object|Internal|Holds resolve and reject functions for use by converter
 quiet|Boolean|Input|Command-line flag used by `testRunner`
 resolve|Boolean|Input|Flag to enable resolution of external `$ref`s.
 stop|Boolean|Input|Command-line flag used by `testRunner`
