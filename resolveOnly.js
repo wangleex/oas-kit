@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const fs = require('fs');
+const util = require('util');
 const resolver = require('./resolver.js');
 const yaml = require('js-yaml');
 const fetch = require('node-fetch');
@@ -18,13 +19,19 @@ options.externals = [];
 options.externalRefs = {};
 options.rewriteRefs = false;
 options.cache = [];
+options.status ='undefined';
 
 function main(str){
     options.openapi = yaml.safeLoad(str,{json:true});
     resolver.resolve(options)
     .then(function(){
+        options.status = 'resolved';
         //fs.writeFileSync('./resolved.json',JSON.stringify(options.openapi,null,2),'utf8');
         fs.writeFileSync('./resolved.yaml',yaml.safeDump(options.openapi,{lineWidth:-1}),'utf8');
+    })
+    .catch(function(err){
+        options.status = 'rejected';
+        console.warn(err);
     });
 }
 
@@ -49,3 +56,8 @@ else {
         }
     });
 }
+
+process.on('exit',function(){
+    console.log(util.inspect(options.openapi,{depth:null}));
+    console.log(options.status);
+});

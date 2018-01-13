@@ -8,8 +8,8 @@ const yaml = require('js-yaml');
 const recurse = require('reftools/lib/recurse.js').recurse;
 const jptr = require('reftools/lib/jptr.js').jptr;
 const resolveInternal = jptr;
-//const clone = require('reftools/lib/clone.js').circularClone;
-const clone = require('reftools/lib/clone.js').clone;
+const clone = require('reftools/lib/clone.js').circularClone;
+//const clone = require('reftools/lib/clone.js').clone;
 
 const red = process.env.NODE_DISABLE_COLORS ? '' : '\x1b[31m';
 const green = process.env.NODE_DISABLE_COLORS ? '' : '\x1b[32m';
@@ -108,7 +108,7 @@ function resolveExternal(root, pointer, options, callback) {
             data = resolveInternal(data, fragment);
         }
         data = resolveAllInternal(data, context, options);
-        callback(data, target);
+        callback(data, target, options);
         return Promise.resolve(data);
     }
 
@@ -117,7 +117,7 @@ function resolveExternal(root, pointer, options, callback) {
     if (options.handlers && options.handlers[effectiveProtocol]) {
         return options.handlers[effectiveProtocol](base, pointer, fragment, options)
             .then(function (data) {
-                callback(data, target);
+                callback(data, target, options);
                 return data;
             });
     }
@@ -139,7 +139,7 @@ function resolveExternal(root, pointer, options, callback) {
                 catch (ex) {
                     if (options.verbose) console.warn(ex);
                 }
-                callback(data, target);
+                callback(data, target, options);
                 return data;
             })
             .catch(function (err) {
@@ -160,7 +160,7 @@ function resolveExternal(root, pointer, options, callback) {
                 catch (ex) {
                     if (options.verbose) console.warn(ex);
                 }
-                callback(data, target);
+                callback(data, target, options);
                 return data;
             })
             .catch(function(err){
