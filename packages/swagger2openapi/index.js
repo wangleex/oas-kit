@@ -318,7 +318,7 @@ function processSecurityScheme(scheme, options) {
         if (scheme.flow === 'application') flowName = 'clientCredentials';
         if (scheme.flow === 'accessCode') flowName = 'authorizationCode';
         if (typeof scheme.authorizationUrl !== 'undefined') flow.authorizationUrl = scheme.authorizationUrl.split('?')[0].trim() || '/';
-        if (typeof scheme.tokenUrl !== 'undefined') flow.tokenUrl = scheme.tokenUrl.split('?')[0].trim() || '/';
+        if (typeof scheme.tokenUrl === 'string') flow.tokenUrl = scheme.tokenUrl.split('?')[0].trim() || '/';
         flow.scopes = scheme.scopes || {};
         scheme.flows = {};
         scheme.flows[flowName] = flow;
@@ -420,7 +420,7 @@ function processParameter(param, op, path, index, openapi, options) {
 
     let consumes = ((op && op.consumes) || (openapi.consumes || [])).filter(common.uniqueOnly);
 
-    if (param.$ref && (typeof param.$ref === 'string')) {
+    if (param && param.$ref && (typeof param.$ref === 'string')) {
         // if we still have a ref here, it must be an internal one
         fixParamRef(param, options);
         let ptr = decodeURIComponent(param.$ref.replace('#/components/parameters/', ''));
@@ -448,7 +448,7 @@ function processParameter(param, op, path, index, openapi, options) {
         }
     }
 
-    if (param.name || param.in) { // if it's a real parameter OR we've dereferenced it
+    if (param && (param.name || param.in)) { // if it's a real parameter OR we've dereferenced it
 
         if (typeof param['x-deprecated'] === 'boolean') {
             param.deprecated = param['x-deprecated'];
@@ -561,7 +561,7 @@ function processParameter(param, op, path, index, openapi, options) {
         }
     }
 
-    if (param.in === 'formData') {
+    if (param && param.in === 'formData') {
         // convert to requestBody component
         singularRequestBody = false;
         result.content = {};
@@ -608,7 +608,7 @@ function processParameter(param, op, path, index, openapi, options) {
             }
         }
     }
-    else if (param.type === 'file') {
+    else if (param && param.type === 'file') {
         // convert to requestBody
         if (param.required) result.required = param.required;
         result.content = {};
@@ -617,7 +617,7 @@ function processParameter(param, op, path, index, openapi, options) {
         result.content["application/octet-stream"].schema.type = 'string';
         result.content["application/octet-stream"].schema.format = 'binary';
     }
-    if (param.in === 'body') {
+    if (param && param.in === 'body') {
         result.content = {};
         if (param.name) result['x-s2o-name'] = (op && op.operationId ? common.sanitiseAll(op.operationId) : '') + ('_' + param.name).toCamelCase();
         if (param.description) result.description = param.description;
@@ -636,7 +636,7 @@ function processParameter(param, op, path, index, openapi, options) {
 
         for (let mimetype of consumes) {
             result.content[mimetype] = {};
-            result.content[mimetype].schema = clone(param.schema) || {};
+            result.content[mimetype].schema = clone(param.schema || {});
             fixUpSchema(result.content[mimetype].schema,options);
         }
     }
@@ -687,7 +687,7 @@ function processParameter(param, op, path, index, openapi, options) {
     }
 
     // tidy up
-    delete param.type;
+    if (param) delete param.type;
     for (let prop of common.parameterTypeProperties) {
         delete param[prop];
     }
@@ -705,6 +705,7 @@ function processParameter(param, op, path, index, openapi, options) {
 }
 
 function processResponse(response, name, op, openapi, options) {
+    if (!response) return false;
     if (response.$ref && (typeof response.$ref === 'string')) {
         if (response.$ref.indexOf('#/definitions/') >= 0) {
             //response.$ref = '#/components/schemas/'+common.sanitise(response.$ref.replace('#/definitions/',''));
@@ -791,19 +792,19 @@ function processPaths(container, containerName, options, requestBodyCache, opena
     for (let p in container) {
         let path = container[p];
         // path.$ref is external only
-        if ((path['x-trace']) && (typeof path['x-trace'] === 'object')) {
+        if (path && (path['x-trace']) && (typeof path['x-trace'] === 'object')) {
             path.trace = path['x-trace'];
             delete path['x-trace'];
         }
-        if ((path['x-summary']) && (typeof path['x-summary'] === 'string')) {
+        if (path && (path['x-summary']) && (typeof path['x-summary'] === 'string')) {
             path.summary = path['x-summary'];
             delete path['x-summary'];
         }
-        if ((path['x-description']) && (typeof path['x-description'] === 'string')) {
+        if (path && (path['x-description']) && (typeof path['x-description'] === 'string')) {
             path.description = path['x-description'];
             delete path['x-description'];
         }
-        if ((path['x-servers']) && (Array.isArray(path['x-servers']))) {
+        if (path && (path['x-servers']) && (Array.isArray(path['x-servers']))) {
             path.servers = path['x-servers'];
             delete path['x-servers'];
         }
@@ -811,7 +812,7 @@ function processPaths(container, containerName, options, requestBodyCache, opena
             if ((common.httpMethods.indexOf(method) >= 0) || (method === 'x-amazon-apigateway-any-method')) {
                 let op = path[method];
 
-                if (op.parameters && Array.isArray(op.parameters)) {
+                if (op && op.parameters && Array.isArray(op.parameters)) {
                     if (path.parameters) {
                         for (let param of path.parameters) {
                             if (typeof param.$ref === 'string') {
@@ -834,24 +835,26 @@ function processPaths(container, containerName, options, requestBodyCache, opena
                         op.parameters = op.parameters.filter(deleteParameters);
                     }
                 }
-                if (op.parameters === null) delete op.parameters;
+                if (op && op.parameters === null) delete op.parameters;
 
-                if (op.security) processSecurity(op.security);
+                if (op && op.security) processSecurity(op.security);
 
                 //don't need to remove requestBody for non-supported ops as they "SHALL be ignored"
 
                 // responses
-                if (!op.responses) {
-                    let defaultResp = {};
-                    defaultResp.description = 'Default response';
-                    op.responses = { default: defaultResp };
-                }
-                for (let r in op.responses) {
-                    let response = op.responses[r];
-                    processResponse(response, r, op, openapi, options);
+                if (op) {
+                    if (!op.responses) {
+                        let defaultResp = {};
+                        defaultResp.description = 'Default response';
+                        op.responses = { default: defaultResp };
+                    }
+                    for (let r in op.responses) {
+                        let response = op.responses[r];
+                        processResponse(response, r, op, openapi, options);
+                    }
                 }
 
-                if ((op['x-servers']) && (Array.isArray(op['x-servers']))) {
+                if (op && (op['x-servers']) && (Array.isArray(op['x-servers']))) {
                     op.servers = op['x-servers'];
                     delete op['x-servers'];
                 } else if (op.schemes && op.schemes.length) {
@@ -860,12 +863,14 @@ function processPaths(container, containerName, options, requestBodyCache, opena
                             if (!op.servers) {
                                 op.servers = [];
                             }
-                            for (let server of openapi.servers) {
-                                let newServer = clone(server);
-                                let serverUrl = url.parse(newServer.url);
-                                serverUrl.protocol = scheme;
-                                newServer.url = serverUrl.format();
-                                op.servers.push(newServer);
+                            if (Array.isArray(openapi.servers)) {
+                                for (let server of openapi.servers) {
+                                    let newServer = clone(server);
+                                    let serverUrl = url.parse(newServer.url);
+                                    serverUrl.protocol = scheme;
+                                    newServer.url = serverUrl.format();
+                                    op.servers.push(newServer);
+                                }
                             }
                         }
                     }
@@ -952,13 +957,13 @@ function processPaths(container, containerName, options, requestBodyCache, opena
 
             }
         }
-        if (path.parameters === null) delete path.parameters;
-        if (path.parameters) {
+        if (path && path.parameters === null) delete path.parameters;
+        if (path && path.parameters) {
             for (let p2 in path.parameters) {
                 let param = path.parameters[p2];
                 processParameter(param, null, path, p, openapi, options); // index here is the path string
             }
-            if (!options.debug) {
+            if (!options.debug && Array.isArray(path.parameters)) {
                 path.parameters = path.parameters.filter(deleteParameters);
             }
         }
