@@ -6,7 +6,7 @@ const url = require('url');
 const pathlib = require('path');
 
 const maybe = require('call-me-maybe');
-const fetch = require('node-fetch');
+const fetch = require('node-fetch-h2');
 const yaml = require('js-yaml');
 
 const jptr = require('reftools/lib/jptr.js');
@@ -1226,6 +1226,7 @@ function fixPaths(openapi, options, reject) {
 
 function convertObj(swagger, options, callback) {
     return maybe(callback, new Promise(function (resolve, reject) {
+        options.original = swagger;
         options.externals = [];
         options.externalRefs = {};
         options.rewriteRefs = true; // avoids stack explosions
@@ -1234,6 +1235,7 @@ function convertObj(swagger, options, callback) {
         options.promise.resolve = resolve;
         options.promise.reject = reject;
         if (!options.cache) options.cache = {};
+        if (options.source) options.cache[options.source] = options.original;
         if (swagger.openapi && (typeof swagger.openapi === 'string') && swagger.openapi.startsWith('3.')) {
             options.openapi = cclone(swagger);
             fixInfo(options.openapi, options, reject);
@@ -1393,7 +1395,6 @@ function convertStr(str, options, callback) {
             catch (ex) { }
         }
         if (obj) {
-            options.original = obj;
             convertObj(obj, options)
             .then(options => resolve(options))
             .catch(ex => reject(ex));
