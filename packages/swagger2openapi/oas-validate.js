@@ -9,7 +9,7 @@ const readfiles = require('node-readfiles');
 const should = require('should/as-function');
 const yaml = require('yaml');
 
-const validator = require('oas-validator');
+const validator = require('oas-validator-lxwang2');
 const common = require('oas-kit-common');
 const clone = require('reftools/lib/clone.js').circularClone;
 const reref = require('reftools/lib/reref.js').reref;

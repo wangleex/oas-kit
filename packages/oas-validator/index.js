@@ -26,7 +26,7 @@ let metaSchema = require('ajv/lib/refs/json-schema-v5.json');
 ajv.addMetaSchema(metaSchema);
 ajv._opts.defaultMeta = metaSchema.id;
 
-const bae = require('better-ajv-errors');
+const bae = require('better-ajv-errors-lxwang2');
 
 class JSONSchemaError extends Error {
   constructor(message) {

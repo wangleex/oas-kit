@@ -8,10 +8,10 @@ const fs = require('fs');
 
 const yaml = require('yaml');
 const fetch = require('node-fetch-h2');
-const bae = require('better-ajv-errors');
+const bae = require('better-ajv-errors-lxwang2');
 
 const swagger2openapi = require('./index.js');
-const validator = require('oas-validator');
+const validator = require('oas-validator-lxwang2');
 
 process.exitCode = 1;
 
